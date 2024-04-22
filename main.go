@@ -36,6 +36,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
+	} else {
+		fmt.Printf("Listening in %v:%v", HOST, PORT)
 	}
 
 	// Close the listener

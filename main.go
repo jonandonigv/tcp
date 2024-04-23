@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"net"
-	"os"
-	"time"
+
+	"github.com/jonandonigv/tcp/server"
 )
 
+/*
 const (
 	HOST = "localhost"
 	TYPE = "tcp"
@@ -29,28 +28,47 @@ func handleRequest(conn net.Conn) {
 
 	conn.Close()
 
-}
+} */
 
 func main() {
-	listen, err := net.Listen(TYPE, HOST+":"+PORT)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	} else {
-		fmt.Printf("Listening in %v:%v", HOST, PORT)
-	}
 
-	// Close the listener
-	defer listen.Close()
+	server := server.CreateTCPServer("localhost:3000")
 
-	for {
-		conn, err := listen.Accept()
-		if err != nil {
-			log.Fatal(err)
-			os.Exit(1)
+	go func() {
+		for msg := range server.RecieveBuffer {
+			fmt.Printf("<Message \n < Headers: address %s > \n Payload: %s >", msg.Header.FromAddress, msg.Payload)
+			response := "< Message from " + msg.Header.FromAddress + " Recieved>"
+
+			select {
+			case server.SendBuffer <- response:
+			case <-server.QuitChannel:
+				return
+			}
 		}
+	}()
 
-		go handleRequest(conn)
+	server.Listen()
+	/*
+		 	listen, err := net.Listen(TYPE, HOST+":"+PORT)
+			if err != nil {
+				log.Fatal(err)
+				os.Exit(1)
+			} else {
+				fmt.Printf("Listening in %v:%v", HOST, PORT)
+			}
 
-	}
+			// Close the listener
+			defer listen.Close()
+
+			for {
+				conn, err := listen.Accept()
+				if err != nil {
+					log.Fatal(err)
+					os.Exit(1)
+				}
+
+				go handleRequest(conn)
+
+			}
+	*/
 }

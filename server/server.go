@@ -39,3 +39,9 @@ func (s *Server) Listen() error {
 
 	return nil
 }
+
+func (s *Server) AcceptConnections() {}
+
+func (s *Server) ReadConnection(conn net.Conn) {}
+
+func (s *Server) CloseAllConnections() {}

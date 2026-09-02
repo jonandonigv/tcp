@@ -47,6 +47,21 @@ Decisions and deviations from the spec made during implementation. Update per ph
 - Retransmission queue, RTO, 2MSL timer — `RetransmitQueue` placeholder (phase 4/5).
 - Congestion control, ECN reserved bits relaxation — still strict `reserved==0` from phase 1.
 
+## Phase 3 — Handshake (LISTEN ↔ ESTABLISHED)
+
+### Control (`pkg/tcp/control.go`)
+
+- **RFC 793 §3.4 p.33 / §3.8 p.33 active/passive OPEN**: `ActiveOpen(local,remote,iss,rcvWnd)` creates `SYN-SENT` (`SND.UNA←ISS`, `SND.NXT←ISS+1` per `NewTCB`) and returns initial `SYN` (`Seq=ISS`, `Window=RcvWnd`). `PassiveOpen`/`NewListenTCB` creates `LISTEN` (`SND.NXT==ISS==0`, no SYN yet). `HandleListenSegment(listen, seg, iss)` implements LISTEN acceptability p.65-66: ignore `RST`, ignore `ACK`, drop non-`SYN`, clone child via `CloneForChild(iss, irs=SEG.SEQ)` → `SYN-RECEIVED` (`RCV.NXT←IRS+1`, `SND.WND←SEG.WND`) and return `SYN-ACK` (`SYN|ACK Seq=ISS Ack=IRS+1`). `HandleListenSegmentWithAddrs` variant carries peer IP for demux; both preserve table-driven determinism — no I/O, no sleeps.
+- **SYN-SENT** (RFC 793 p.36 / §3.9 p.66-67): `HandleSegment` dispatches per flag combo. `RST` acceptable only if `AckAcceptable` (ACK acks our SYN) → `CLOSED` + `ErrConnectionReset`; `SYN+ACK` validates `AckAcceptable`, updates `IRS/RCV.NXT←IRS+1`, `SND.WND/WL1/WL2`, `UpdateSndUna`, transitions `SYN-SENT→ESTABLISHED` (p.36 step 5) and returns `ACK` (`Seq=SND.NXT==ISS+1`, `Ack=RCV.NXT`). `SYN` alone (simultaneous open p.32) → `SYN-RECEIVED` with retransmit `SYN-ACK` (`Seq=ISS`). Lone `ACK` without `SYN` dropped. `ACK` not in `[SND.UNA,SND.NXT]` → `ErrAckNotAcceptable`.
+- **SYN-RECEIVED** (RFC 793 p.36 / p.68): `RST` → `CLOSED`; `ACK` must be `AckAcceptable` else `ErrAckNotAcceptable`; duplicate `SYN` retransmits `SYN-ACK`; valid `ACK` (`Ack==SND.NXT`) updates `SND.UNA/WND/WL1/WL2` and `SYN-RECEIVED→ESTABLISHED` with no reply (p.36). No data path — phase 4 handles SEQ+LEN window checks, FIN/RST in synchronized states (`ESTABLISHED→CLOSED` on `RST` per p.68, `ACK` window validation per p.69).
+- **Helpers**: `BuildAck(tcb)` (`Seq=SND.NXT Ack=RCV.NXT`), `ErrSegmentUnexpected/ErrConnectionReset/ErrAckNotAcceptable`. All logic references RFC page; tests exercise handshake without raw sockets via `Header` structs only (no privileged I/O).
+
+### Out of scope (phase 3)
+
+- Data transfer, segmentation, retransmission/RTO, zero-window probing (phase 4).
+- Graceful close `FIN`/`TIME-WAIT 2MSL` and abort `RST` generation for `CLOSED` (phase 5).
+- MSS/Options negotiation — header options remain opaque as in phase 1.
+
 ## References
 
 - RFC 793 https://datatracker.ietf.org/doc/html/rfc793

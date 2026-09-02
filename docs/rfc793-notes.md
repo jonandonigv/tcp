@@ -26,6 +26,27 @@ Decisions and deviations from the spec made during implementation. Update per ph
 - Congestion control, SACK / Window Scale / Timestamps (RFC 1323) — option bytes kept raw for forward compatibility as long as it can be done without breaking the code.
 - IPv6 pseudo-header, URG semantics beyond carrying `UrgentPointer`.
 
+## Phase 2 — State Machine & TCB
+
+### State machine (`pkg/tcp/state.go`)
+
+- **RFC 793 Figure 6 p.23**: 11 states `CLOSED → LISTEN → SYN-SENT → SYN-RECEIVED → ESTABLISHED → FIN-WAIT-1 → FIN-WAIT-2 → CLOSE-WAIT → CLOSING → LAST-ACK → TIME-WAIT → CLOSED`. Enum `StateClosed..StateTimeWait` with `String()` for debug. All transitions are table-driven for determinism (no sleeps, no I/O) per AGENTS.md Testing.
+- **Two-level table**: `transitionTable` (state→set of reachable states) implements the diagram edges; `eventTable` (state×event→next state) encodes the skeleton event→transition needed for deterministic unit tests (AGENTS.md §6: `map[State]map[Event]Transition`). Illegal pairs return `ErrInvalidTransition` and leave state unchanged, matching RFC 793 §3.9 error handling (drop segment, remain in state).
+- **Events**: `EventPassiveOpen/EventActiveOpen` (user OPEN), `SEND/RECEIVE/CLOSE/ABORT/STATUS`, segment arrivals `RCV_SYN/SYNACK/ACK/FIN/FINACK/RST`, and timeouts `RETRANSMIT, TIMEWAIT`. STATUS/SEND/RECEIVE are no-ops in synchronized states (`IsSynchronized()`) and illegal in CLOSED/LISTEN/SYN-*; phase 3 will add buffering semantics.
+- **Helpers**: `CanTransitionTo`, `NextState(s,ev)`, `IsSynchronized`, `IsClosed`. `NextState` validates state existence (`ErrInvalidState`) and event legality. Reserved: simultaneous open `LISTEN→SYN-SENT` and simultaneous close `FIN-WAIT-1→CLOSING` are included per RFC 793 p.32.
+
+### TCB (`pkg/tcp/tcb.go`)
+
+- **RFC 793 §3.2 p.20**: Fields `ISS,SND.UNA/NXT/WND/UP/WL1/WL2, IRS,RCV.NXT/WND/UP`, 4-tuple, `State`, plus `SendBuf/RecvBuf` and `RetransmitQueue` placeholders (phase 4). Owned by a single goroutine (state machine loop); file header documents ownership (AGENTS.md Concurrency).
+- **Initialization** (`NewTCB`, `NewListenTCB`): `SND.UNA←ISS`, `SND.NXT←ISS` (or `ISS+1` after SYN in `SYN-SENT/SYN-RECEIVED` where SYN consumes one seq per RFC 793 p.25), `SND.WND←0` (unknown), `SND.WL1←ISS`, `RCV.WND←rcvWnd` (0→`DefaultRcvWindow=65535`), `RCV.NXT←0` (→`IRS+1` after SYN). ISS is caller-supplied for deterministic tests; production will use clock-based ISN (RFC 793 p.27). `CloneForChild` duplicates a LISTEN TCB into `SYN-RECEIVED` with `IRS`/`RcvNxt=IRS+1` per passive open §3.8 p.34.
+- **Window & ACK checks**: `InWindow(seq)` implements `RCV.NXT ≤ SEG.SEQ < RCV.NXT+RCV.WND` with wrapping (phase 4 will switch to `internal/seq.Between`); zero window only accepts `seq==RCV.NXT` (probe). `AckAcceptable(ack)` checks `SND.UNA ≤ ack ≤ SND.NXT` per §3.3 p.26; `UpdateSndUna`/`AdvanceRcvNxt/AdvanceSndNxt` mirror §3.9 ACK and SEQ updates. `SetState`/`HandleEvent` enforce the state diagram and auto-advance `RCV.NXT` on `RCV_SYN/SYNACK` when `IRS` is set.
+
+### Out of scope (phase 2)
+
+- Full segment acceptability (`SEQ+LEN` window checks for multi-byte segments, RST/FIN handling) — skeleton only (phase 3).
+- Retransmission queue, RTO, 2MSL timer — `RetransmitQueue` placeholder (phase 4/5).
+- Congestion control, ECN reserved bits relaxation — still strict `reserved==0` from phase 1.
+
 ## References
 
 - RFC 793 https://datatracker.ietf.org/doc/html/rfc793

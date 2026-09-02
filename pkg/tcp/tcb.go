@@ -76,7 +76,11 @@ type TCB struct {
 
 	// Retransmission queue — segments sent but not yet ACKed (SND.UNA .. SND.NXT-1).
 	// Opaque until retransmit/ package lands (phase 4).
-	RetransmitQueue [][]byte // each entry is a raw TCP segment (header+data)
+	RetransmitQueue [][]byte // legacy placeholder; phase 4 uses pkg/retransmit.Queue
+
+	// Reassembly buffer for out-of-order segments (phase 4).
+	// Key is SEG.SEQ, value is payload bytes. Guarded by TCB goroutine.
+	Reassembly map[uint32][]byte
 }
 
 // NewTCB creates a TCB in the given state with the supplied ISS and
@@ -118,6 +122,7 @@ func NewTCB(localAddr netip.Addr, localPort uint16, remoteAddr netip.Addr, remot
 		RcvNxt:     0,
 		RcvWnd:     rcvWnd,
 		RcvUp:      0,
+		Reassembly: make(map[uint32][]byte),
 	}
 	// SYN consumes one sequence number (RFC 793 p.25). Advance SND.NXT
 	// for states where SYN has already been sent.

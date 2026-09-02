@@ -62,6 +62,26 @@ Decisions and deviations from the spec made during implementation. Update per ph
 - Graceful close `FIN`/`TIME-WAIT 2MSL` and abort `RST` generation for `CLOSED` (phase 5).
 - MSS/Options negotiation — header options remain opaque as in phase 1.
 
+## Phase 4 — Data Path (send/receive, ack, window, retransmit)
+
+### Data path (`pkg/tcp/data.go`)
+
+- **RFC 793 §3.3 p.25-26 segment acceptability / §3.9 p.69-70**: `IsSegmentAcceptable(tcb,hdr,payloadLen)` checks `SEG.SEQ`/`SEG.LEN` (SYN/FIN count as 1, RFC 793 p.25) against `[RCV.NXT, RCV.NXT+RCV.WND)` and overlap into window; zero-length `SEQ==RCV.NXT` case and zero-window probe handled. Uses wrapping arithmetic (`int32`) equivalent to `internal/seq.Between`.
+- **Send** (`Send(tcb,q,data,mss)`) per §3.7 p.42: synchronized states only (`ESTABLISHED/CLOSE-WAIT` etc.), `MSS` chunking (`DefaultMSS=1460`, RFC 793 §3.7 536-byte default noted), `SND.WND` flow control (`usable = SND.WND - (SND.NXT-SND.UNA)`, zero-window → `ErrZeroWindow`), builds `PSH|ACK` headers (`Seq=SND.NXT`, `Ack=RCV.NXT`, `Window=RcvWnd`), advances `SND.NXT`, enqueues each segment into `retransmit.Queue` (copied payload, `SentAt` captured). Respects window; excess data truncated to usable window.
+- **Receive** (`Recv(tcb,q,hdr,payload)`) per §3.9 p.69-70: validates `RST→CLOSED` per p.68, acceptability (unacceptable → duplicate `ACK <SEQ=SND.NXT><ACK=RCV.NXT>` per p.69), `ACK` processing (`AckAcceptable`, `UpdateSndUna`, `q.Ack`, window update via `SND.WL1/WL2` check `SEQ>WL1` or `SEQ==WL1 && ACK>=WL2` per p.70), in-order delivery (`SEQ==RCV.NXT` → advance `RCV.NXT`, deliver, drain `Reassembly` map for contiguous buffered segments), duplicate (`SEQ<RCV.NXT` → duplicate ACK), out-of-order buffering (map `Reassembly[SEQ]→payload` within window, next ACK), `FIN` consumes 1 sequence beyond payload and stays `ESTABLISHED` (close moves to phase 5). Pure ACK with no data returns no deliver/ack.
+- **Retransmission queue** (`pkg/retransmit/queue.go`): goroutine-local `Queue{entries[]Entry{Seq,Payload,SentAt,Attempts}}`, `Enqueue` copies payload, `Ack(ack)` removes entries where `ack >= Seq+Len` wrapping-aware (RFC 793 p.41 `SND.UNA` advance), `NeedsRetransmit(rto)` and `Retransmit()` for RTO expiry. Deterministic via injected `nowFn` (no sleeps).
+- **RTO** (`pkg/retransmit/rto.go`): RFC 6298 §2 SRTT/RTTVAR/RTO (`alpha=1/8 beta=1/4`, `RTO=SRTT+max(G,4*RTTVAR)`, clamp `[200ms,60s]`), `Update(rtt)`, `Backoff()` exponential `*2` per RFC 793 p.42, `Timeout()`; deterministic initial `1s`.
+
+### Stack demux (`pkg/tcp/stack.go`)
+
+- **RFC 793 §3.9 demux / AGENTS.md §7 `NetworkAdapter`**: minimal `Stack{tcbs map[4-tuple]→TCB}` for loopback tests (no privileged sockets), `Add/Lookup` (exact 4-tuple fallback to `LISTEN` on same local), `Deliver(local,remote,hdr,payload,iss,q)` dispatches to `HandleListenSegmentWithAddrs` or `HandleSegment`/`Recv` per state and updates retransmit queue. Placeholder for `netadapter` TUN/TAP integration in phase 6.
+
+### Out of scope (phase 4)
+
+- Congestion control (slow start / congestion avoidance, RFC 2581) — window is flow control only.
+- Delayed ACK, Nagle, urgent pointer processing — `PSH` set on all data segments, `URG` still carried opaquely.
+- SACK / Window Scaling / Timestamps (RFC 1323) — option parsing extensible as in phase 1.
+
 ## References
 
 - RFC 793 https://datatracker.ietf.org/doc/html/rfc793

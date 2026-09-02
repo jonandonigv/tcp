@@ -1,3 +1,5 @@
+// Package server is deprecated — see server.go.
+// Deprecated: use pkg/tcp.Header instead.
 package server
 
 type TCPHeader struct {

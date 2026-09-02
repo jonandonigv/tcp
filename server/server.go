@@ -1,3 +1,10 @@
+// Package server is deprecated: legacy demo predating the RFC 793 reset.
+// It is retained only for build compatibility (AGENTS.md §1 Reset note).
+// New code must use github.com/jonandonigv/tcp/pkg/tcp instead; the
+// replacement example lives at cmd/example/. This package will be removed
+// after phase 6 integration tests pass. See docs/rfc793-notes.md Phase 6.
+//
+// Deprecated: use pkg/tcp.
 package server
 
 import (

@@ -6,17 +6,19 @@ Faithful implementation of the Transmission Control Protocol (TCP) as specified 
 
 ## Project Status
 
-**Phase 0 — Complete** (branch + `AGENTS.md`)
+**Phases 0 – 6 — Complete** (branch `feat/rfc793`, RFC 793 MVP)
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
 | 0 | Branch `feat/rfc793` + `AGENTS.md` + `docs/rfc793-notes.md` | ✅ Done |
-| 1 | `internal/seq` + `pkg/tcp/header.go` (codec, checksum, options) | Next |
-| 2 | `pkg/tcp/state.go` + `tcb.go` (state machine, TCB) | Planned |
-| 3 | Handshake (LISTEN ↔ ESTABLISHED) | Planned |
-| 4 | Data path (send/receive, ack, window, retransmit) | Planned |
-| 5 | Close/Abort (FIN/RST, TIME-WAIT 2MSL) | Planned |
-| 6 | Integration example + loopback tests, deprecate `server/` | Planned |
+| 1 | `internal/seq` + `pkg/tcp/header.go` (codec, checksum, options) | ✅ Done |
+| 2 | `pkg/tcp/state.go` + `tcb.go` (state machine, TCB) | ✅ Done |
+| 3 | Handshake (LISTEN ↔ ESTABLISHED) | ✅ Done |
+| 4 | Data path (send/receive, ack, window, retransmit) | ✅ Done |
+| 5 | Close/Abort (FIN/RST, TIME-WAIT 2MSL) | ✅ Done |
+| 6 | Integration example + loopback tests, deprecate `server/` | ✅ Done (6a deprecation + 6b example/loopback) |
+
+> **Deprecation (Phase 6a):** `server/` (`server/server.go:13`, `server/types.go:3`) and `main.go:35` are deprecated (RFC 793 reset, AGENTS.md §1). Retained solely for `go vet`/`go test` build compatibility. New code must use `pkg/tcp` and `cmd/example`; removal tracked after merge.
 
 See `AGENTS.md:5` for the full roadmap and `docs/rfc793-notes.md` for spec deviations.
 
@@ -39,7 +41,7 @@ See `AGENTS.md:5` for the full roadmap and `docs/rfc793-notes.md` for spec devia
 └── docs/rfc793-notes.md    # implementation decisions vs spec
 ```
 
-Only `AGENTS.md`, `go.mod`, `main.go`, and `server/` exist at Phase 0 — other paths are created incrementally.
+All `pkg/tcp`, `pkg/retransmit`, `internal/seq`, `cmd/example` exist (phases 1–6). `server/` remains deprecated but building for compatibility.
 
 ## Getting Started
 

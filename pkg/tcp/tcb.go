@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"time"
 )
 
 // Default receive window advertised by a new TCB (RFC 793 §3.3 Window).
@@ -81,6 +82,11 @@ type TCB struct {
 	// Reassembly buffer for out-of-order segments (phase 4).
 	// Key is SEG.SEQ, value is payload bytes. Guarded by TCB goroutine.
 	Reassembly map[uint32][]byte
+
+	// TIME-WAIT state (phase 5, RFC 793 §3.2 p.23, 2MSL).
+	// When State == TIME-WAIT, TimeWaitUntil is the deadline after which
+	// the TCB may be moved to CLOSED (RFC 793 p.42 2MSL). Zero means not in TIME-WAIT.
+	TimeWaitUntil time.Time
 }
 
 // NewTCB creates a TCB in the given state with the supplied ISS and
@@ -270,6 +276,35 @@ func (t *TCB) CloneForChild(remoteAddr netip.Addr, remotePort uint16, iss, irs u
 	child.RcvNxt = irs + 1 // SYN consumes one (RFC 793 p.25)
 	child.SndWnd = 0       // will be set from SYN's Window
 	return child, nil
+}
+
+// EnterTimeWait moves the TCB to TIME-WAIT and arms the 2MSL timer.
+// RFC 793 §3.2 p.23 / p.42: TIME-WAIT lasts 2*MSL (MSL=2min per spec, but
+// implementations often use 60s; callers supply the 2MSL duration for
+// determinism). now is the current time (injected for tests).
+func (t *TCB) EnterTimeWait(now time.Time, twoMSL time.Duration) {
+	t.State = StateTimeWait
+	t.TimeWaitUntil = now.Add(twoMSL)
+}
+
+// TimeWaitExpired reports whether the 2MSL timer has fired (RFC 793 p.42).
+// It is deterministic; callers provide now (e.g., fake clock).
+func (t *TCB) TimeWaitExpired(now time.Time) bool {
+	if t.State != StateTimeWait || t.TimeWaitUntil.IsZero() {
+		return false
+	}
+	return !now.Before(t.TimeWaitUntil)
+}
+
+// CloseTimeWait advances TIME-WAIT → CLOSED if expired (RFC 793 p.42).
+// Returns true if transition occurred.
+func (t *TCB) CloseTimeWait(now time.Time) bool {
+	if t.TimeWaitExpired(now) {
+		t.State = StateClosed
+		t.TimeWaitUntil = time.Time{}
+		return true
+	}
+	return false
 }
 
 // String returns a debug summary.

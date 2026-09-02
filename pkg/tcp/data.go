@@ -7,6 +7,7 @@ package tcp
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jonandonigv/tcp/pkg/retransmit"
 )
@@ -220,11 +221,32 @@ func Recv(tcb *TCB, q *retransmit.Queue, hdr *Header, payload []byte) (delivered
 				break
 			}
 		}
-		// Handle FIN (1 seq) after data
+		// Handle FIN (1 seq) after data — graceful close per RFC 793 §3.9 p.70-71
 		if hdr.HasFlag(FlagFIN) {
+			// FIN consumes 1 beyond payload (RFC 793 p.25). Already in-order, so advance.
 			tcb.AdvanceRcvNxt(1)
-			// State transition for FIN will be handled by control.go phase 5;
-			// for now remain ESTABLISHED and ACK.
+			// Drive state machine: ESTABLISHED→CLOSE-WAIT, FIN-WAIT-2→TIME-WAIT, etc.
+			// Use event table via NextState for determinism; handle FIN vs FIN+ACK.
+			ev := EventRcvFin
+			if hdr.HasFlag(FlagACK) {
+				ev = EventRcvFinAck
+				// If our FIN was already acked, FIN-ACK is distinct from plain FIN
+				// (FIN-WAIT-1 distinction). Let NextState decide.
+				if _, err := NextState(tcb.State, ev); err != nil {
+					ev = EventRcvFin
+				}
+			}
+			if nxt, err := NextState(tcb.State, ev); err == nil {
+				tcb.State = nxt
+				if nxt == StateTimeWait {
+					tcb.EnterTimeWait(time.Now(), Default2MSL)
+				}
+			} else if nxt2, err2 := NextState(tcb.State, EventRcvFin); err2 == nil {
+				tcb.State = nxt2
+				if nxt2 == StateTimeWait {
+					tcb.EnterTimeWait(time.Now(), Default2MSL)
+				}
+			}
 		}
 		ack = BuildAck(tcb)
 		return delivered, ack, nil

@@ -82,6 +82,25 @@ Decisions and deviations from the spec made during implementation. Update per ph
 - Delayed ACK, Nagle, urgent pointer processing — `PSH` set on all data segments, `URG` still carried opaquely.
 - SACK / Window Scaling / Timestamps (RFC 1323) — option parsing extensible as in phase 1.
 
+## Phase 5 — Close/Abort (FIN/RST, TIME-WAIT 2MSL)
+
+### Control close (`pkg/tcp/control.go` phase 5)
+
+- **RFC 793 §3.8 p.33 CLOSE / §3.9 p.71 graceful close**: `Close(tcb,q)` enforces Figure 6 user `CLOSE`: `ESTABLISHED→FIN-WAIT-1`, `CLOSE-WAIT→LAST-ACK`, `SYN-RECEIVED→FIN-WAIT-1` else `ErrInvalidClose`; builds `FIN|ACK Seq=SND.NXT Ack=RCV.NXT Window=RcvWnd`, enqueues 1-byte dummy into `retransmit.Queue` (FIN consumes 1 per p.25 `Ack(Seq+1)` clears), advances `SND.NXT` by 1, transitions via `CanTransitionTo`. `Default2MSL=60s` (RFC 793 p.42 MSL=120s; 60s is common `2MSL` trim for tests).
+- **Abort** (`Abort(tcb,q)` per §3.8 p.34 ABORT): clears `q`, moves `*→CLOSED` (including `TIME-WAIT`), wipes `TimeWaitUntil`, returns `RST Seq=SND.NXT`. RST handling already in `HandleSegment`/`Recv` per p.68: `SYN-SENT` RST acceptable only if `AckAcceptable`, synchronized `RST→CLOSED`, `LISTEN` RST ignored, `CLOSED` send RST. New `ErrInvalidClose` for illegal CLOSE.
+- **FIN arrival** (`handleFin`/`handleFinAck` per §3.9 p.70-71): control path validates `AckAcceptable` (RFC 793 p.69) and `ACK` advances `SND.UNA`, then `FIN` consumes 1 (`RCV.NXT+1`) and drives state via `NextState(EventRcvFin/FinAck)` or direct Figure 6 mapping: `ESTABLISHED→CLOSE-WAIT`, `FIN-WAIT-1` (`FIN+ACK` where `ack==SND.NXT` → `TIME-WAIT` else `CLOSING`), `FIN-WAIT-2→TIME-WAIT`, `CLOSE-WAIT` stays, `CLOSING→TIME-WAIT` on ACK, `TIME-WAIT` restart timer per p.72, `LAST-ACK→CLOSED` on `ACK`. Each `TIME-WAIT` entry arms `TCB.EnterTimeWait(now,Default2MSL)` via `time.Now()` (tests override via injected `TimeWaitUntil`).
+- **TCB TIME-WAIT** (`pkg/tcp/tcb.go` phase 5): new `TimeWaitUntil time.Time`, `EnterTimeWait(now,2MSL)` sets `State=TIME-WAIT`, `TimeWaitUntil=now+2MSL`, `TimeWaitExpired(now)` (`!now.Before(deadline)`), `CloseTimeWait(now)` → `CLOSED` (RFC 793 p.42 2MSL). Helpers `TimeWaitTimeout(tcb,now)` for stack. Deterministic: tests inject `now` without sleeps, wait for `go test -race` green.
+
+### Data path FIN (`pkg/tcp/data.go` phase 5)
+
+- **Recv FIN** (RFC 793 p.69-70): after in-order reassembly, `FIN` advances `RCV.NXT` by 1 and drives `NextState(EventRcvFin/FinAck)` matching control mapping (`ESTABLISHED→CLOSE-WAIT`, `FIN-WAIT-1`/`FIN-WAIT-2`→`TIME-WAIT`/`CLOSING`, etc.), arming `EnterTimeWait` via `time.Now()` for `TIME-WAIT`. Out-of-order `FIN` buffered as data; duplicate `FIN` (`SEQ<RCV.NXT`) returns duplicate ACK (p.69). `SYN` in `ESTABLISHED` still errors `ErrSegmentUnexpected`.
+
+### Out of scope (phase 5)
+
+- Full `TIME-WAIT` restart on duplicate `FIN` + retransmission of final `ACK` loop beyond single `EnterTimeWait` (covers p.72 restart, not full retransmit of ACK).
+- Keepalive, linger, half-close `SHUTDOWN` semantics — graceful `FIN`/`TIME-WAIT` and `RST` abort only.
+- `CLOSED` RST generation for stray segments beyond returning `ErrTCBClosed` (caller should build RST per p.65 `Seq=0 Ack=SEG.SEQ+SEG.LEN`).
+
 ## References
 
 - RFC 793 https://datatracker.ietf.org/doc/html/rfc793

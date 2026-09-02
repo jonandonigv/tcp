@@ -6,7 +6,7 @@ Faithful implementation of the Transmission Control Protocol (TCP) as specified 
 
 ## Project Status
 
-**Phase 0 – 5 — Complete** (branch + `AGENTS.md`, phases 1–5 on `feat/rfc793`)
+**Phases 0 – 6 — Complete** (branch `feat/rfc793`, RFC 793 MVP)
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
@@ -16,9 +16,9 @@ Faithful implementation of the Transmission Control Protocol (TCP) as specified 
 | 3 | Handshake (LISTEN ↔ ESTABLISHED) | ✅ Done |
 | 4 | Data path (send/receive, ack, window, retransmit) | ✅ Done |
 | 5 | Close/Abort (FIN/RST, TIME-WAIT 2MSL) | ✅ Done |
-| 6 | Integration example + loopback tests, deprecate `server/` | 🚧 Phase 6a deprecation committed, 6b example+tests next |
+| 6 | Integration example + loopback tests, deprecate `server/` | ✅ Done (6a deprecation + 6b example/loopback) |
 
-> **Deprecation (Phase 6a):** `server/` (`server/server.go:13`, `server/types.go:3`) and `main.go:35` are deprecated (RFC 793 reset, AGENTS.md §1). Retained solely for `go vet`/`go test` build compatibility. New code must use `pkg/tcp` and `cmd/example`; removal tracked post-6b.
+> **Deprecation (Phase 6a):** `server/` (`server/server.go:13`, `server/types.go:3`) and `main.go:35` are deprecated (RFC 793 reset, AGENTS.md §1). Retained solely for `go vet`/`go test` build compatibility. New code must use `pkg/tcp` and `cmd/example`; removal tracked after merge.
 
 See `AGENTS.md:5` for the full roadmap and `docs/rfc793-notes.md` for spec deviations.
 
@@ -41,7 +41,7 @@ See `AGENTS.md:5` for the full roadmap and `docs/rfc793-notes.md` for spec devia
 └── docs/rfc793-notes.md    # implementation decisions vs spec
 ```
 
-All `pkg/tcp`, `pkg/retransmit`, `internal/seq` paths exist since phases 1–5; `cmd/example` lands in 6b. `server/` remains deprecated but building (Phase 6a).
+All `pkg/tcp`, `pkg/retransmit`, `internal/seq`, `cmd/example` exist (phases 1–6). `server/` remains deprecated but building for compatibility.
 
 ## Getting Started
 

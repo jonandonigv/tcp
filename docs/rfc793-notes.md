@@ -103,10 +103,15 @@ Decisions and deviations from the spec made during implementation. Update per ph
 
 ## Phase 6 — Integration (deprecation + example)
 
-### Phase 6a — Deprecation (this commit)
+### Phase 6a — Deprecation (phase 6a commit)
 
 - **Legacy `server/` (`server/server.go:13`, `server/types.go:3`) and `main.go:35`** are deprecated (RFC 793 reset per AGENTS.md §1). Retained solely for `go vet`/`go test` build compatibility; package docs now carry `Deprecated: use pkg/tcp` and `main.go` carries `Deprecated: use cmd/example`. No behavior change — `Server` still builds via `net.Listen("tcp")` for the old demo, but new code must use `pkg/tcp`.
-- **README.md** updated to mark phases 0–5 ✅ Done, phase 6 split into 6a (deprecation committed) / 6b (example+tests next), and to note `server/` as deprecated and `cmd/example` as the replacement.
+- **README.md** updated to mark phases 0–5 ✅ Done, phase 6 split into 6a (deprecation) / 6b (example+tests next), and to note `server/` as deprecated and `cmd/example` as the replacement.
+
+### Phase 6b — Integration example + loopback tests (this commit)
+
+- **Example** (`cmd/example/main.go`): tiny CLI exercising the stack without privileged sockets (`go run ./cmd/example`): `PassiveOpen` LISTEN → `ActiveOpen` SYN-SENT, `Stack.Deliver` handshake (SYN→SYN-ACK→ACK) to `ESTABLISHED`, `Send` with `retransmit.Queue` (MSS 10, SND.WND flow control, PSH|ACK), `Recv` with reassembly (in-order + OOO buffering, duplicate ACK), graceful 4-way close (`Close` FIN-WAIT-1 → Recv CLOSE-WAIT → Close LAST-ACK → Recv TIME-WAIT → HandleSegment CLOSED) and `TIME-WAIT 2MSL` expiry via `EnterTimeWait/CloseTimeWait` (RFC 793 §3.4/§3.9, Default2MSL). All segments carry `RcvWnd` and use wrapping-aware `IsSegmentAcceptable`/`AckAcceptable`.
+- **Loopback tests** (`pkg/tcp/loopback_test.go`): `TestLoopbackFullFlow` (handshake `Stack.Deliver` SYN→SYN-ACK→ACK to ESTABLISHED, data 250 bytes MSS 100 reassembled via `Send`/`Recv` + `retransmit.Queue` Ack, OOO buffering, 4-way close + `2MSL` deterministic `10ms` expiry), `TestLoopbackStackDemux` (4-tuple exact vs `LISTEN` fallback), `TestIntegrationExampleRuns` (header marshal+`VerifyChecksum` golden). No `net.Listen` / raw sockets, no sleeps (fake clock for RTO/TIME-WAIT), deterministic `go test -race` green.
 
 ## References
 

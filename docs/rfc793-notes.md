@@ -101,6 +101,13 @@ Decisions and deviations from the spec made during implementation. Update per ph
 - Keepalive, linger, half-close `SHUTDOWN` semantics — graceful `FIN`/`TIME-WAIT` and `RST` abort only.
 - `CLOSED` RST generation for stray segments beyond returning `ErrTCBClosed` (caller should build RST per p.65 `Seq=0 Ack=SEG.SEQ+SEG.LEN`).
 
+## Phase 6 — Integration (deprecation + example)
+
+### Phase 6a — Deprecation (this commit)
+
+- **Legacy `server/` (`server/server.go:13`, `server/types.go:3`) and `main.go:35`** are deprecated (RFC 793 reset per AGENTS.md §1). Retained solely for `go vet`/`go test` build compatibility; package docs now carry `Deprecated: use pkg/tcp` and `main.go` carries `Deprecated: use cmd/example`. No behavior change — `Server` still builds via `net.Listen("tcp")` for the old demo, but new code must use `pkg/tcp`.
+- **README.md** updated to mark phases 0–5 ✅ Done, phase 6 split into 6a (deprecation committed) / 6b (example+tests next), and to note `server/` as deprecated and `cmd/example` as the replacement.
+
 ## References
 
 - RFC 793 https://datatracker.ietf.org/doc/html/rfc793

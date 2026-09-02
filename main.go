@@ -1,3 +1,8 @@
+// Package main is deprecated: legacy demo using net.Listen("tcp") which
+// bypasses RFC 793 (AGENTS.md §8 Do Not). Retained for build compatibility
+// until cmd/example replaces it. See docs/rfc793-notes.md Phase 6.
+//
+// Deprecated: use cmd/example.
 package main
 
 import (
